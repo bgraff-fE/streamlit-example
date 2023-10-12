@@ -1,38 +1,46 @@
-from collections import namedtuple
-import altair as alt
-import math
-import pandas as pd
 import streamlit as st
+import time
+from PIL import Image
+import os
+import boto3
 
 """
-# Welcome to Streamlit!
+# Welcome to AI-mazing Art!
 
-Edit `/streamlit_app.py` to customize this app to your heart's desire :heart:
-
-If you have any questions, checkout our [documentation](https://docs.streamlit.io) and [community
-forums](https://discuss.streamlit.io).
-
-In the meantime, below is an example of what you can do with just a few lines of code:
 """
+# AWS credentials
+AWS_ACCESS_KEY_ID = os.environ.get('AWS_ACCESS_KEY_ID')
+AWS_SECRET_ACCESS_KEY = os.environ.get('AWS_SECRET_ACCESS_KEY')
+AWS_SESSION_TOKEN = os.environ.get('AWS_SESSION_TOKEN')
 
+# Connect to S3
+s3 = boto3.resource(
+        's3',
+        aws_access_key_id=AWS_ACCESS_KEY_ID,
+        aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+        aws_session_token=AWS_SESSION_TOKEN
+    )
 
-with st.echo(code_location='below'):
-    total_points = st.slider("Number of points in spiral", 1, 5000, 2000)
-    num_turns = st.slider("Number of turns in spiral", 1, 100, 9)
+col1, col2, col3 = st.columns([2,1,1])
 
-    Point = namedtuple('Point', 'x y')
-    data = []
+uploaded_photo = col1.file_uploader(" Upload your image")
+if uploaded_photo is not None:
+    # Erstellen Sie einen eindeutigen Dateinamen durch Zählen der vorhandenen Dateien im Ordner 'AImages'
+    existing_files = s3.Bucket('aimagez').objects.filter(Prefix='AImages/')
+    file_count = sum(1 for _ in existing_files)
+    unique_filename = f"AImages/{file_count + 1}.png"
 
-    points_per_turn = total_points / num_turns
+    # Hochladen des Bildes in den S3 Bucket
+    s3.Bucket('aimagez').put_object(Key=unique_filename, Body=uploaded_photo.read(), ACL='public-read')
+    st.success("Bild erfolgreich in S3 Bucket hochgeladen!")
 
-    for curr_point_num in range(total_points):
-        curr_turn, i = divmod(curr_point_num, points_per_turn)
-        angle = (curr_turn + 1) * 2 * math.pi * i / points_per_turn
-        radius = curr_point_num / total_points
-        x = radius * math.cos(angle)
-        y = radius * math.sin(angle)
-        data.append(Point(x, y))
+    # Laden aller Bilder aus dem S3 Bucket beim Start der App
+    all_images = list(s3.Bucket('aimagez').objects.filter(Prefix='AImages/'))
 
-    st.altair_chart(alt.Chart(pd.DataFrame(data), height=500, width=500)
-        .mark_circle(color='#0068c9', opacity=0.5)
-        .encode(x='x:Q', y='y:Q'))
+    # Erstellen eines Image Grids zur Anzeige aller hochgeladenen Bilder
+    for i in range(0, len(all_images), 3):
+        cols = st.columns(3)
+        for j in range(3):
+            if i+j < len(all_images):
+                image_path = f"https://aimagez.s3.amazonaws.com/{all_images[i+j].key}"
+                cols[j].image(image_path, width=200)
